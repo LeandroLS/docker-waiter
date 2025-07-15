@@ -1,0 +1,36 @@
+{
+  "name": "docker-mcp-server",
+  "version": "0.1.0",
+  "description": "MCP Server for Docker commands in TypeScript",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "docker-mcp-server": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "npm run build && node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "mcp",
+    "docker",
+    "server",
+    "containers",
+    "typescript"
+  ],
+  "author": "Leandro Lima",
+  "license": "MIT"
+}

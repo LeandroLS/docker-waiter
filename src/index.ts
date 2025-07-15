@@ -12,27 +12,33 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { z } from 'zod';
 
 const execAsync = promisify(exec);
 
-interface DockerPortArgs {
-  container: string;
-}
+const DockerPortArgsSchema = z.object({
+  container: z.string(),
+});
 
-interface DockerLogsArgs {
-  container: string;
-  tail?: number;
-}
+const DockerLogsArgsSchema = z.object({
+  container: z.string(),
+  tail: z.number().optional(),
+});
 
-interface DockerInspectArgs {
-  container: string;
-}
+const DockerInspectArgsSchema = z.object({
+  container: z.string(),
+});
 
-interface DockerStatsArgs {
-  no_stream?: boolean;
-}
+const DockerStatsArgsSchema = z.object({
+  no_stream: z.boolean().optional(),
+});
 
-type ToolArgs = DockerPortArgs | DockerLogsArgs | DockerInspectArgs | DockerStatsArgs | Record<string, never>;
+const DockerDeleteArgsSchema = z.object({
+  container: z.string(),
+  force: z.boolean().optional(),
+});
+
+
 
 class DockerMcpServer {
   private server: Server;
@@ -54,7 +60,6 @@ class DockerMcpServer {
   }
 
   private setupToolHandlers(): void {
-    // Listar ferramentas disponíveis
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {
       const tools: Tool[] = [
         {
@@ -142,12 +147,30 @@ class DockerMcpServer {
             properties: {},
           },
         },
+        {
+          name: 'docker_delete',
+          description: 'Delete a Docker container',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              container: {
+                type: 'string',
+                description: 'Container name or ID',
+              },
+              force: {
+                type: 'boolean',
+                description: 'Force remove running container (default: false)',
+                default: false,
+              },
+            },
+            required: ['container'],
+          },
+        }
       ];
 
       return { tools };
     });
 
-    // Executar ferramentas
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name, arguments: args } = request.params;
 
@@ -159,23 +182,39 @@ class DockerMcpServer {
           case 'docker_ps_all':
             return await this.dockerPsAll();
 
-          case 'docker_port':
-            return await this.dockerPort((args as DockerPortArgs).container);
+          case 'docker_port': {
+            const validatedArgs = DockerPortArgsSchema.parse(args);
+            return await this.dockerPort(validatedArgs.container);
+          }
 
-          case 'docker_logs':
+          case 'docker_logs': {
+            const validatedArgs = DockerLogsArgsSchema.parse(args);
             return await this.dockerLogs(
-              (args as DockerLogsArgs).container,
-              (args as DockerLogsArgs).tail || 100
+              validatedArgs.container,
+              validatedArgs.tail || 100
             );
+          }
 
-          case 'docker_inspect':
-            return await this.dockerInspect((args as DockerInspectArgs).container);
+          case 'docker_inspect': {
+            const validatedArgs = DockerInspectArgsSchema.parse(args);
+            return await this.dockerInspect(validatedArgs.container);
+          }
 
-          case 'docker_stats':
-            return await this.dockerStats((args as DockerStatsArgs).no_stream !== false);
+          case 'docker_stats': {
+            const validatedArgs = DockerStatsArgsSchema.parse(args);
+            return await this.dockerStats(validatedArgs.no_stream !== false);
+          }
 
           case 'docker_images':
             return await this.dockerImages();
+
+          case 'docker_delete': {
+            const validatedArgs = DockerDeleteArgsSchema.parse(args);
+            return await this.dockerDelete(
+              validatedArgs.container,
+              validatedArgs.force || false
+            );
+          }
 
           default:
             throw new McpError(
@@ -184,6 +223,12 @@ class DockerMcpServer {
             );
         }
       } catch (error) {
+        if (error instanceof z.ZodError) {
+          throw new McpError(
+            ErrorCode.InvalidParams,
+            `Invalid arguments for ${name}: ${error.message}`
+          );
+        }
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         throw new McpError(
           ErrorCode.InternalError,
@@ -274,6 +319,19 @@ class DockerMcpServer {
         {
           type: 'text',
           text: stdout,
+        },
+      ],
+    };
+  }
+
+  private async dockerDelete(container: string, force: boolean): Promise<CallToolResult> {
+    const command = force ? `docker rm -f ${container}` : `docker rm ${container}`;
+    await execAsync(command);
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Container ${container} deleted successfully`,
         },
       ],
     };
